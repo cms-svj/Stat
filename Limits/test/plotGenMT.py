@@ -1,9 +1,11 @@
 import os
 import sys
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
-ifname = ""
-if len(sys.argv)>1:
-    ifname = sys.argv[1]
+parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
+parser.add_argument("-i", "--infile", dest="ifname", type=str, default="", help="input ROOT file (if any)")
+parser.add_argument("-w", "--width", dest="width", type=str, default="width2", help="width directory name")
+args = parser.parse_args()
 
 import ROOT as r
 r.gROOT.SetBatch(True)
@@ -12,7 +14,7 @@ def signame(width):
     template = "step1_GEN_s-channel_mMed-3100_mDark-20_rinv-0.3_alpha-peak_{}13TeV-pythia8_n-50000_part-1.root"
     return template.format("" if width is None else "width-{}_".format(width))
 
-dir = "root://cmseos.fnal.gov//store/user/pedrok/SVJ2017/width2/GEN/"
+dir = "root://cmseos.fnal.gov//store/user/pedrok/SVJ2017/{}/GEN/".format(args.width)
 mZprime = 3100
 widths = [None, 0.01, 0.05, 0.10, 0.15, 0.20, 0.30]
 colors = [r.kBlack, r.kBlue, r.kMagenta, r.kOrange+2, r.kCyan+1, r.kYellow+3, r.kRed]
@@ -23,8 +25,8 @@ hists = {
     "mt": [],
     "mzp": [],
 }
-if len(ifname)==0:
-    ofile = r.TFile.Open("hists_genmt.root","RECREATE")
+if len(args.ifname)==0:
+    ofile = r.TFile.Open("hists_genmt_{}.root".format(args.width),"RECREATE")
     for iw,width in enumerate(widths):
         sig = signame(width)
         file = r.TFile.Open(dir+sig)
@@ -59,7 +61,7 @@ if len(ifname)==0:
         hist.Write()
         if iw>0: hist2.Write()
 else:
-    ifile = r.TFile.Open(ifname)
+    ifile = r.TFile.Open(args.ifname)
     for iw,width in enumerate(widths):
         hist = ifile.Get("h{}".format(iw))
         hist.SetDirectory(0)
@@ -75,7 +77,7 @@ for htype in hists:
     hlist = hists[htype]
     can = r.TCanvas()
     can.SetLogy()
-    leg = r.TLegend(0.65,0.5,0.95,0.9)
+    leg = r.TLegend(0.7,0.5,0.95,0.9)
     leg.SetFillColor(0)
     leg.SetFillColorAlpha(0,0.6);
     leg.SetBorderSize(0)
@@ -90,9 +92,8 @@ for htype in hists:
     haxis.Draw("hist")
     for ih,hist in enumerate(hlist):
         iho = ih+offset
-        leg.AddEntry(hist,"Z' width = {} GeV".format(widths[iho]*mZprime if iho>0 else "0.01"),"l")
-        #hist.Draw("hist"+(" same" if ih>0 else ""))
+        leg.AddEntry(hist,"Z' width = {}{}".format(widths[iho]*100 if iho>0 else "0.01","%" if iho>0 else " GeV"),"l")
         hist.Draw("hist same")
     leg.Draw()
-    can.Print("{}_width.png".format(htype))
+    can.Print("{}_{}.png".format(htype,args.width))
 

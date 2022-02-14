@@ -7,29 +7,27 @@ parser.add_argument("-d", "--dir", dest="dir", type=str, default="root://cmseos.
 parser.add_argument("-s", "--signals", dest="signals", type=str, required=True, help="file w/ list of signals")
 parser.add_argument("-c", "--cuts", dest="cuts", type=str, default="", help="cuts to apply")
 parser.add_argument("-x", "--suffix", dest="suffix", type=str, required=True, help="suffix for output filename")
+parser.add_argument("-r", "--reco", dest="reco", default=False, action="store_true", help="use reco instead of gen quantities")
 args = parser.parse_args()
-
-with open('dict_xsec_Zprime.txt','r') as xfile:
-    xsecs = {xline.split('\t')[0]: float(xline.split('\t')[1]) for xline in xfile}
 
 import ROOT as r
 r.gInterpreter.ProcessLine('#include "{}/src/Analysis/KCode/KMath.h"'.format(os.environ["CMSSW_BASE"]))
 drawname = "GenMT>>h(80,0,8000)"
+if args.reco: drawname = drawname.replace("GenMT","MT_AK8")
 
-param_names = getParamNames()+["xsec"]
+param_names = getParamNames()
 param_values = []
 with open(args.signals,'r') as sfile:
     for line in sfile:
         line = line.rstrip()
         if len(line)==0: continue
         param_values.append(line.split())
-        param_values[-1].append(xsecs[param_values[-1][0]])
 
 signals = [makeSigDict(param_values[i],param_names) for i in range(len(param_values))]
 
 # make a Combine-esque tree in order to reuse plotLimit code
 base_qtys = ["quantileExpected","limit"]
-qtys = base_qtys + ["trackedParam_{}".format(q) for q in param_names]
+qtys = base_qtys + ["trackedParam_{}".format(q) for q in param_names+["xsec"]]
 r.gROOT.ProcessLine("struct quantile_t { "+" ".join(["Double_t {};".format(qty) for qty in qtys])+" };")
 qobj = r.quantile_t()
 qobj.quantileExpected = 0.5
