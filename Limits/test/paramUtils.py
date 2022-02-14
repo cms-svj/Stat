@@ -100,6 +100,12 @@ def getSignameShort(sig):
     sig2["rinv"] = str(rinvVal(sig2["rinv"]))
     return "SVJ_"+"_".join(sig2[key] for key in params)
 
+def getSignameLong(sig):
+    params = getParamNames()
+    sig2 = deepcopy(sig)
+    sig2["rinv"] = str(rinvVal(sig2["rinv"]))
+    return "SVJ_"+"_".join("{}-{}".format(key,sig2[key]) for key in params)
+
 # generic check for signal directory
 def getXname(sig,xname):
     signame = getSignameCheck(sig)
