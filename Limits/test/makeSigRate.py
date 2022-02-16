@@ -97,13 +97,13 @@ HV1["x1"] = dict(Nc = 2, g = 1.0)
 
 # ROOT stuff
 import ROOT as r
-base_qtys = ["quantileExpected","rate","width"]
+base_qtys = ["quantileExpected","sigma","branch","rate","width"]
 param_names = ["g_q","g_dark","xsec","maxwidth"]
 qtys = base_qtys + ["trackedParam_{}".format(q) for q in param_names]
 r.gROOT.ProcessLine("struct quantile_t { "+" ".join(["Double_t {};".format(qty) for qty in qtys])+" };")
 qobj = r.quantile_t()
 qobj.quantileExpected = 0.5
-qobj.trackedParam_xsec = 1.0
+qobj.trackedParam_xsec = 0.03265 # previous cross section for comparison
 qobj.trackedParam_maxwidth = 10.0
 
 # function to make a limit-style tree with production rate info
@@ -132,6 +132,8 @@ def looper_SSM(tree,HV_model):
         # fill quantities
         qobj.trackedParam_g_q = SM_quarks["u"]["g"] # arbitrary choice of value
         qobj.trackedParam_g_dark = g_dark
+        qobj.sigma = sigma_SSM
+        qobj.branch = BRs[-1]
         qobj.rate = sigma_SSM*BRs[-1]
         qobj.width = total_width/mZprime*100
 
@@ -165,9 +167,10 @@ def looper_universal(tree,HV_model):
             # fill quantities
             qobj.trackedParam_g_q = g_q
             qobj.trackedParam_g_dark = g_dark
+            qobj.sigma = sigma_universal_now
+            qobj.branch = BRs[-1]
             qobj.rate = sigma_universal_now*BRs[-1]
-            # divide out maxwidth since it is used as xsec to multiply limit and find intersection
-            qobj.width = total_width/mZprime*100/qobj.trackedParam_maxwidth
+            qobj.width = total_width/mZprime*100
 
             # fill tree
             tree.Fill()
