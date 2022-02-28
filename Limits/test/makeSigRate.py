@@ -91,9 +91,13 @@ HV = OrderedDict()
 HV["x1"] = dict(Nc = 2, g = 1.0)
 HV["x2"] = dict(Nc = 2, g = 1.0)
 
-# dark sector w/ minimum flavor coupling
+# dark sector w/ minimum N values
 HV1 = OrderedDict()
-HV1["x1"] = dict(Nc = 2, g = 1.0)
+HV1["x1"] = dict(Nc = 1, g = 1.0)
+
+# intermediate case: Nf = 1, Nc = 2
+HV1NC2 = OrderedDict()
+HV1NC2["x1"] = dict(Nc = 2, g = 1.0)
 
 # ROOT stuff
 import ROOT as r
@@ -146,6 +150,9 @@ def looper_SSM_HV(tree):
 def looper_SSM_HV1(tree):
     looper_SSM(tree,HV1)
 
+def looper_SSM_HV1NC2(tree):
+    looper_SSM(tree,HV1NC2)
+
 def looper_universal(tree,HV_model):
     # universal-style (leptophobic) SM
     SM_universal = deepcopy(SM_quarks)
@@ -181,8 +188,13 @@ def looper_universal_HV(tree):
 def looper_universal_HV1(tree):
     looper_universal(tree,HV1)
 
+def looper_universal_HV1NC2(tree):
+    looper_universal(tree,HV1NC2)
+
 make_tree("SSM", looper_SSM_HV)
 make_tree("SSMHV1", looper_SSM_HV1)
+make_tree("SSMHV1NC2", looper_SSM_HV1NC2)
 make_tree("universal", looper_universal_HV)
 make_tree("universalHV1", looper_universal_HV1)
+make_tree("universalHV1NC2", looper_universal_HV1NC2)
 
