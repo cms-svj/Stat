@@ -7,6 +7,12 @@ from string import Template
 from paramUtils import fprint, runCmd, alphaVal, makeSigDict, getParamNames, getSignameShort, OpenFile, paramVal
 from Stat.Limits.bruteForce import silence
 
+def DtoF(hD):
+    from ROOT import TH1F
+    hF = TH1F()
+    hD.Copy(hF)
+    return hF
+
 def getXsecs(fname):
     with open(fname,'r') as xfile:
         xsecs = {xline.split('\t')[0]: float(xline.split('\t')[1]) for xline in xfile}
@@ -21,9 +27,13 @@ def fill_template(inname, outname, **kwargs):
     with open(outname,'w') as temp:
         temp.write(new_lines)
 
-def transform(hname,iname,wname,w2name,template,signame,extargs,dryrun):
+def transform(hname,jnames,systs,iname,wname,w2name,template,sig,signame,extargs,dryrun):
+    lumi = 36330+41530+59740
+    acc_dijet = 0.41
+
     tname = template.format("template")
     ofname = template.format(signame).replace(".txt",".root")
+    hofname = "hist_"+ofname
     dcfname = template.format(signame)
 
     if dryrun: return dcfname
@@ -34,8 +44,10 @@ def transform(hname,iname,wname,w2name,template,signame,extargs,dryrun):
 
     hfile = OpenFile(hname)
     ifile = OpenFile(iname)
+    jfiles = [OpenFile(jname) for jname in jnames]
     w = ifile.Get(wname)
 
+    xbins = array('d',[1500,1530,1607,1687,1770,1856,1945,2037,2132,2231,2332,2438,2546,2659,2775,2895,3019,3147,3279,3416,3558,3704,3854,4010,4171,4337,4509,4686,4869,5058,5253,5455,5663,5877,6099,6328,6564,6808,7060,7320,7589,7866,8152])
     th1x = w.var("th1x")
     bins = th1x.getBinning().array()
     bins.SetSize(th1x.getBinning().numBins()+1)
@@ -46,26 +58,40 @@ def transform(hname,iname,wname,w2name,template,signame,extargs,dryrun):
     getattr(w2,"import")(w.allVars())
     getattr(w2,"import")(w.allPdfs())
     getattr(w2,"import")(w.data("data_obs"))
-    
-    # get sig histo
-    systs = [
-        "",
-        "_jesUp",
-        "_jesDown",
-        "_jerUp",
-        "_jerDown",
-    ]
+
+    # get sig histos
     histname = "widejetmass_"+signame+"_cmsdijet"
     hyield = 0
-    for syst in systs:
+    for isyst,syst in enumerate(systs):
+        # SVJ histo
         hist = hfile.Get(histname+syst)
         if not isinstance(hist,r.TH1): raise RuntimeError("Could not get {} from {}".format(histname+syst,hname))
         hist.SetDirectory(0)
-        if syst=="": hyield = hist.Integral()
-    
+
+        # add dijet sig histo (scale by xsec * BR * A * lumi)
+        dhistname = "h_qq_{}".format(sig["mZprime"])
+        dhist = jfiles[isyst].Get(dhistname)
+        if not isinstance(dhist,r.TH1): raise RuntimeError("Could not get {} from {}".format(dhistname,jnames[isyst]))
+        dhist.SetDirectory(0)
+        dhistF = DtoF(dhist)
+        dhist_rebinned = dhistF.Rebin(len(xbins)-1,dhistname+"_rebin",xbins)
+        #dhist_rebinned.Scale(sig["xsecDijet"]*acc_dijet*lumi/dhist_rebinned.Integral())
+        dhist_rebinned.Scale(sig["xsecDijet"]*acc_dijet*lumi)
+
+        if args.noSVJ: hist.Scale(0.)
+        hist.Add(dhist_rebinned)
+        if syst=="":
+            hyield = hist.Integral()
+            # write out before resetting bins
+            hofile = r.TFile.Open(hofname,"RECREATE")
+            hofile.cd()
+            dhist_rebinned.Write(dhistname)
+            hist.Write()
+            hofile.Close()
+
         # reset sig histo bins
         hist.GetXaxis().Set(len(bins)-1,bins)
-    
+
         # import new pdf
         hname2 = signame+syst
         pdf = r.RooDataHist(hname2, hname2, r.RooArgList(th1x), hist, 1.);
@@ -93,6 +119,14 @@ def doLimit(info):
     sig = info["sig"]
     signame = getSignameShort(sig)
 
+    BR_qq = 5./6.
+    BR_dark = 0.47
+    sig["xsecSVJ"] = sig["xsec"]
+    sig["xsecDijet"] = sig["xsec"]/BR_dark*(1-BR_dark)*BR_qq
+    # update w/ total xsec
+    sig["xsec"] += sig["xsecDijet"]
+    if args.noSVJ: sig["xsec"] = sig["xsecDijet"]
+
     params = {key:paramVal(key,val) for key,val in sig.iteritems()}
     setargs = []
     trkargs = []
@@ -108,7 +142,7 @@ def doLimit(info):
     if args.freezeNorm: frzargs.append("shapeBkg_PFDijet2017_bkg_PFDijet2017__norm")
 
     # datacard setup
-    dcfname = transform("svj_dijet.root","dijet_combine_qq_1900_lumi-137.500_PFDijet2017.root","wPFDijet2017","wPFDijet2018","dijet_combine_{}.txt",signame,extargs,args.dry_run)
+    dcfname = transform("svj_dijet.root",args.jnames,args.systs,"dijet_combine_qq_1900_lumi-137.500_PFDijet2017.root","wPFDijet2017","wPFDijet2018","dijet_combine_{}.txt",sig,signame,extargs,args.dry_run)
 
     cargs = args.args
     if len(cargs)>0: cargs += " "
@@ -128,7 +162,24 @@ def doLimit(info):
 def main(args):
     cname = args.name[:]
     if args.freezeNorm: cname += "Frz"
+    if args.noSVJ: cname += "Only"
     args.cname = cname
+
+    args.systs = [
+        "",
+        "_jesUp",
+        "_jesDown",
+        "_jerUp",
+        "_jerDown",
+    ]
+
+    # check for dijet files
+    args.jnames = ["ResonanceShapes_qq_13TeV_Spring16{}.root".format(x) for x in [y.upper() for y in args.systs]]
+    for jname in args.jnames:
+        if not os.path.isfile(jname):
+            # JERDOWN missing for some reason
+            if "JERDOWN" in jname: os.system("cp {} {}".format(jname.replace("_JERDOWN",""),jname))
+            else: os.system("wget https://github.com/CMSDIJET/DijetShapeInterpolator/raw/master/{}".format(jname))
 
     if not args.just_hadd:
         if args.npool==0:
@@ -212,6 +263,7 @@ if __name__=="__main__":
     parser.add_argument("-N", "--name", dest="name", type=str, default="Test", help="name for combine files")
     parser.add_argument("-a", "--args", dest="args", type=str, default="", help="extra args for combine")
     parser.add_argument("-u", "--update-xsec", dest="updateXsec", type=str, metavar=('filename','suffix'), default=[], nargs=2, help="info to update cross sections when hadding")
+    parser.add_argument("--no-svj", dest="noSVJ", default=False, action="store_true", help="exclude SVJ events (sanity check)")
     args = parser.parse_args()
 
     # parse signal info
