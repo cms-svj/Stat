@@ -47,7 +47,7 @@ def transform(hname,jnames,systs,iname,wname,w2name,template,sig,signame,extargs
     jfiles = [OpenFile(jname) for jname in jnames]
     w = ifile.Get(wname)
 
-    xbins = array('d',[1500,1530,1607,1687,1770,1856,1945,2037,2132,2231,2332,2438,2546,2659,2775,2895,3019,3147,3279,3416,3558,3704,3854,4010,4171,4337,4509,4686,4869,5058,5253,5455,5663,5877,6099,6328,6564,6808,7060,7320,7589,7866,8152])
+    xbins = array('d',[1530,1607,1687,1770,1856,1945,2037,2132,2231,2332,2438,2546,2659,2775,2895,3019,3147,3279,3416,3558,3704,3854,4010,4171,4337,4509,4686,4869,5058,5253,5455,5663,5877,6099,6328,6564,6808,7060,7320,7589,7866,8152,8752])
     th1x = w.var("th1x")
     bins = th1x.getBinning().array()
     bins.SetSize(th1x.getBinning().numBins()+1)
@@ -177,7 +177,7 @@ def main(args):
     args.jnames = ["ResonanceShapes_qq_13TeV_Spring16{}.root".format(x) for x in [y.upper() for y in args.systs]]
     for jname in args.jnames:
         if not os.path.isfile(jname):
-            # JERDOWN missing for some reason
+            # todo: make JERDOWN from JERUP w/ getDownFromUpNom()
             if "JERDOWN" in jname: os.system("cp {} {}".format(jname.replace("_JERDOWN",""),jname))
             else: os.system("wget https://github.com/CMSDIJET/DijetShapeInterpolator/raw/master/{}".format(jname))
 
