@@ -27,7 +27,7 @@ def fill_template(inname, outname, **kwargs):
     with open(outname,'w') as temp:
         temp.write(new_lines)
 
-def transform(hname,jnames,systs,iname,wname,w2name,template,sig,signame,extargs,dryrun):
+def transform(hname,iname,wname,w2name,template,sig,signame,extargs,dryrun):
     lumi = 36330+41530+59740
     acc_dijet = 0.41
 
@@ -37,6 +37,15 @@ def transform(hname,jnames,systs,iname,wname,w2name,template,sig,signame,extargs
     dcfname = template.format(signame)
 
     if dryrun: return dcfname
+
+    systs = [
+        "",
+        "_jesUp",
+        "_jesDown",
+        "_jerUp",
+        "_jerDown",
+    ]
+    jnames = ["ResonanceShapes_qq_13TeV_Spring16{}.root".format(x) for x in [y.upper() for y in systs]]
     
     import ROOT as r
     r.gSystem.Load("libHiggsAnalysisCombinedLimit.so")
@@ -142,7 +151,7 @@ def doLimit(info):
     if args.freezeNorm: frzargs.append("shapeBkg_PFDijet2017_bkg_PFDijet2017__norm")
 
     # datacard setup
-    dcfname = transform("svj_dijet.root",args.jnames,args.systs,"dijet_combine_qq_1900_lumi-137.500_PFDijet2017.root","wPFDijet2017","wPFDijet2018","dijet_combine_{}.txt",sig,signame,extargs,args.dry_run)
+    dcfname = transform("svj_dijet.root","dijet_combine_qq_1900_lumi-137.500_PFDijet2017.root","wPFDijet2017","wPFDijet2018","dijet_combine_{}.txt",sig,signame,extargs,args.dry_run)
 
     cargs = args.args
     if len(cargs)>0: cargs += " "
@@ -165,21 +174,7 @@ def main(args):
     if args.noSVJ: cname += "Only"
     args.cname = cname
 
-    args.systs = [
-        "",
-        "_jesUp",
-        "_jesDown",
-        "_jerUp",
-        "_jerDown",
-    ]
-
-    # check for dijet files
-    args.jnames = ["ResonanceShapes_qq_13TeV_Spring16{}.root".format(x) for x in [y.upper() for y in args.systs]]
-    for jname in args.jnames:
-        if not os.path.isfile(jname):
-            # todo: make JERDOWN from JERUP w/ getDownFromUpNom()
-            if "JERDOWN" in jname: os.system("cp {} {}".format(jname.replace("_JERDOWN",""),jname))
-            else: os.system("wget https://github.com/CMSDIJET/DijetShapeInterpolator/raw/master/{}".format(jname))
+    # assumes getDijetShapes has already been called
 
     if not args.just_hadd:
         if args.npool==0:
