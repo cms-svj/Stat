@@ -27,9 +27,24 @@ def fill_template(inname, outname, **kwargs):
     with open(outname,'w') as temp:
         temp.write(new_lines)
 
-def transform(hname,iname,wname,w2name,template,sig,signame,extargs,dryrun):
+def transform(iname,wname,w2name,template,sig,signame,extargs,region,acc,method,finalState,dryrun):
     lumi = 36330+41530+59740
-    acc_dijet = 0.41
+    acc_svj_fname = "dijetEff_svj.root"
+    dmWeight = 1 if "DM" in finalState else 0
+    smWeight = 1 if "SM" in finalState else 0
+
+    import ROOT as r
+    r.gSystem.Load("libHiggsAnalysisCombinedLimit.so")
+    silence()
+
+    # get SVJ eff for this signal in region: use graph to interpolate for intermediate mass values
+    acc_svj_file = OpenFile(acc_svj_fname)
+    acc_svj_tree = acc_svj_file.Get("limit")
+    drawname = "trackedParam_mZprime:{}".format(region)
+    cutname = "&&".join("abs(trackedParam_{}-{})<0.0001".format(key,paramVal(key,sig[key])) for key in ["mDark","rinv","alpha"])
+    n = acc_svj_tree.Draw(drawname,cutname,"goff")
+    acc_graph = r.TGraph(n, acc_svj_tree.GetV1(), acc_svj_tree.GetV2())
+    acc_svj = acc_graph.Eval(float(sig["mZprime"]))
 
     tname = template.format("template")
     ofname = template.format(signame).replace(".txt",".root")
@@ -45,18 +60,19 @@ def transform(hname,iname,wname,w2name,template,sig,signame,extargs,dryrun):
         "_jerUp",
         "_jerDown",
     ]
+    # dijet search used SR shapes for CRs
     jnames = ["ResonanceShapes_qq_13TeV_Spring16{}.root".format(x) for x in [y.upper() for y in systs]]
-    
-    import ROOT as r
-    r.gSystem.Load("libHiggsAnalysisCombinedLimit.so")
-    silence()
+    svjnames = ["ResonanceShapes_svj_13TeV_{}{}.root".format(region,x) for x in systs]
 
-    hfile = OpenFile(hname)
     ifile = OpenFile(iname)
     jfiles = [OpenFile(jname) for jname in jnames]
+    svjfiles = [OpenFile(svjname) for svjname in svjnames]
     w = ifile.Get(wname)
 
-    xbins = array('d',[1530,1607,1687,1770,1856,1945,2037,2132,2231,2332,2438,2546,2659,2775,2895,3019,3147,3279,3416,3558,3704,3854,4010,4171,4337,4509,4686,4869,5058,5253,5455,5663,5877,6099,6328,6564,6808,7060,7320,7589,7866,8152,8752])
+    xlist = [2438,2546,2659,2775,2895,3019,3147,3279,3416,3558,3704,3854,4010,4171,4337,4509,4686,4869,5058,5253,5455,5663,5877,6099,6328,6564,6808,7060,7320,7589,7866,8152,8752]
+    if method=="fit":
+        xlist = [1530,1607,1687,1770,1856,1945,2037,2132,2231,2332]+xlist
+    xbins = array('d',xlist)
     th1x = w.var("th1x")
     bins = th1x.getBinning().array()
     bins.SetSize(th1x.getBinning().numBins()+1)
@@ -66,45 +82,58 @@ def transform(hname,iname,wname,w2name,template,sig,signame,extargs,dryrun):
     w2 = r.RooWorkspace(w2name)
     getattr(w2,"import")(w.allVars())
     getattr(w2,"import")(w.allPdfs())
+    getattr(w2,"import")(w.allFunctions())
     getattr(w2,"import")(w.data("data_obs"))
 
     # get sig histos
-    histname = "widejetmass_"+signame+"_cmsdijet"
     hyield = 0
     for isyst,syst in enumerate(systs):
+        if syst=="":
+            hofile = r.TFile.Open(hofname,"RECREATE")
+
         # SVJ histo
-        hist = hfile.Get(histname+syst)
-        if not isinstance(hist,r.TH1): raise RuntimeError("Could not get {} from {}".format(histname+syst,hname))
+        histname = "h_svj_{}".format(signame.replace("SVJ_","").replace(".",""))
+        hist = svjfiles[isyst].Get(histname)
+        if not isinstance(hist,r.TH1): raise RuntimeError("Could not get {} from {}".format(histname,svjnames[isyst]))
         hist.SetDirectory(0)
+        hist = DtoF(hist)
+        hist.Scale(dmWeight*sig["xsecSVJ"]*acc_svj*lumi)
+        hist_rebinned = hist.Rebin(len(xbins)-1,histname+"_rebin",xbins)
 
         # add dijet sig histo (scale by xsec * BR * A * lumi)
         dhistname = "h_qq_{}".format(sig["mZprime"])
         dhist = jfiles[isyst].Get(dhistname)
         if not isinstance(dhist,r.TH1): raise RuntimeError("Could not get {} from {}".format(dhistname,jnames[isyst]))
         dhist.SetDirectory(0)
-        dhistF = DtoF(dhist)
-        dhist_rebinned = dhistF.Rebin(len(xbins)-1,dhistname+"_rebin",xbins)
-        #dhist_rebinned.Scale(sig["xsecDijet"]*acc_dijet*lumi/dhist_rebinned.Integral())
-        dhist_rebinned.Scale(sig["xsecDijet"]*acc_dijet*lumi)
+        dhist = DtoF(dhist)
+        dhist.Scale(smWeight*sig["xsecDijet"]*acc*lumi)
+        dhist_rebinned = dhist.Rebin(len(xbins)-1,dhistname+"_rebin",xbins)
 
-        if args.noSVJ: hist.Scale(0.)
-        hist.Add(dhist_rebinned)
+        shist = hist.Clone(histname.replace("svj","sum"))
+        shist.Add(dhist)
+        shist_rebinned = hist_rebinned.Clone(histname.replace("svj","sum")+"_rebinned")
+        shist_rebinned.Add(dhist_rebinned)
+
+        # write out before resetting bins
         if syst=="":
-            hyield = hist.Integral()
-            # write out before resetting bins
-            hofile = r.TFile.Open(hofname,"RECREATE")
-            hofile.cd()
-            dhist_rebinned.Write(dhistname)
+            hyield = shist_rebinned.Integral()
             hist.Write()
-            hofile.Close()
+            hist_rebinned.Write()
+            dhist.Write()
+            dhist_rebinned.Write()
+            shist.Write()
+            shist_rebinned.Write()
 
         # reset sig histo bins
-        hist.GetXaxis().Set(len(bins)-1,bins)
+        shist_rebinned.GetXaxis().Set(len(bins)-1,bins)
 
         # import new pdf
         hname2 = signame+syst
-        pdf = r.RooDataHist(hname2, hname2, r.RooArgList(th1x), hist, 1.);
+        pdf = r.RooDataHist(hname2, hname2, r.RooArgList(th1x), shist_rebinned, 1.);
         getattr(w2,"import")(pdf)
+
+        if syst=="":
+            hofile.Close()
 
     # make datacard
     fill_template(
@@ -124,6 +153,7 @@ def transform(hname,iname,wname,w2name,template,sig,signame,extargs,dryrun):
     return dcfname
 
 def doLimit(info):
+    outputs = []
     args = info["args"]
     sig = info["sig"]
     signame = getSignameShort(sig)
@@ -133,8 +163,9 @@ def doLimit(info):
     sig["xsecSVJ"] = sig["xsec"]
     sig["xsecDijet"] = sig["xsec"]/BR_dark*(1-BR_dark)*BR_qq
     # update w/ total xsec
-    sig["xsec"] += sig["xsecDijet"]
-    if args.noSVJ: sig["xsec"] = sig["xsecDijet"]
+    sig["xsec"] = 0
+    if "DM" in args.finalState: sig["xsec"] += sig["xsecSVJ"]
+    if "SM" in args.finalState: sig["xsec"] += sig["xsecDijet"]
 
     params = {key:paramVal(key,val) for key,val in sig.iteritems()}
     setargs = []
@@ -146,12 +177,28 @@ def doLimit(info):
         extargs = extargs+p+" extArg "+str(v)+"\n"
     frzargs = trkargs[:]
 
-    fitparams = ["p1_PFDijet2017","p2_PFDijet2017","p3_PFDijet2017","shapeBkg_PFDijet2017_bkg_PFDijet2017__norm"]
-    trkargs.extend(fitparams)
-    if args.freezeNorm: frzargs.append("shapeBkg_PFDijet2017_bkg_PFDijet2017__norm")
+    dijet_acc = 0.41
+    if args.method=="fit":
+        fitparams = ["p1_PFDijet2017","p2_PFDijet2017","p3_PFDijet2017","shapeBkg_PFDijet2017_bkg_PFDijet2017__norm"]
+        trkargs.extend(fitparams)
+        if args.freezeNorm: frzargs.append("shapeBkg_PFDijet2017_bkg_PFDijet2017__norm")
 
-    # datacard setup
-    dcfname = transform("svj_dijet.root","dijet_combine_qq_1900_lumi-137.500_PFDijet2017.root","wPFDijet2017","wPFDijet2018","dijet_combine_{}.txt",sig,signame,extargs,args.dry_run)
+        # datacard setup
+        dcfname = transform("dijet_combine_qq_1900_lumi-137.500_PFDijet2017.root","wPFDijet2017","wPFDijet2018","dijet_combine_fit_{}.txt",sig,signame,extargs,"cmsdijet",dijet_acc,args.method,args.finalState,args.dry_run)
+
+    elif args.method=="ratio":
+        dcfnameSR = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MC.root","wPFDijet2017MC","wPFDijet2018MC","dijet_combine_SR_{}.txt",sig,signame,extargs,"cmsdijet",dijet_acc,args.method,args.finalState,args.dry_run)
+        dcfnameCR = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MCCR.root","wPFDijet2017MCCR","wPFDijet2018MCCR","dijet_combine_CRhigh_{}.txt",sig,signame,extargs,"cmsdijetCRhigh",dijet_acc*0.45,args.method,args.finalState,args.dry_run)
+        dcfnameCRmid = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MCCRmid.root","wPFDijet2017MCCRmid","wPFDijet2018MCCRmid","dijet_combine_CRmid_{}.txt",sig,signame,extargs,"cmsdijetCRmiddle",dijet_acc*0.47,args.method,args.finalState,args.dry_run)
+
+        # use combined card
+        dcfname = "dijet_combine_ratio_{}.txt".format(signame)
+        command = "combineCards.py "+" ".join([dcfnameSR,dcfnameCR,dcfnameCRmid])+" > "+dcfname
+        outputs.append(command)
+        if not args.dry_run: os.system(command)
+        # add ext args
+        with open(dcfname,'a') as dcfile:
+            dcfile.write(extargs)
 
     cargs = args.args
     if len(cargs)>0: cargs += " "
@@ -160,7 +207,6 @@ def doLimit(info):
     )
 
     # run combine
-    outputs = []
     fprint("Calculating limit for {}...".format(signame))
     command = "combine -M AsymptoticLimits {}".format(cargs)
     outputs.append(command)
@@ -171,7 +217,8 @@ def doLimit(info):
 def main(args):
     cname = args.name[:]
     if args.freezeNorm: cname += "Frz"
-    if args.noSVJ: cname += "Only"
+    if "SM" not in args.finalState: cname += "DM"
+    elif "DM" not in args.finalState: cname += "SM"
     args.cname = cname
 
     # assumes getDijetShapes has already been called
@@ -258,7 +305,8 @@ if __name__=="__main__":
     parser.add_argument("-N", "--name", dest="name", type=str, default="Test", help="name for combine files")
     parser.add_argument("-a", "--args", dest="args", type=str, default="", help="extra args for combine")
     parser.add_argument("-u", "--update-xsec", dest="updateXsec", type=str, metavar=('filename','suffix'), default=[], nargs=2, help="info to update cross sections when hadding")
-    parser.add_argument("--no-svj", dest="noSVJ", default=False, action="store_true", help="exclude SVJ events (sanity check)")
+    parser.add_argument("-m", "--method", dest="method", type=str, required=True, choices=["fit","ratio"], help="dijet background prediction method")
+    parser.add_argument("-s", "--final-state", dest="finalState", type=str, nargs='+', choices=["DM","SM"], help="signal final state(s)")
     args = parser.parse_args()
 
     # parse signal info
