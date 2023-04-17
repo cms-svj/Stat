@@ -111,8 +111,7 @@ def transform(iname,wname,w2name,template,sig,signame,extargs,region,acc,method,
 
         shist = hist.Clone(histname.replace("svj","sum"))
         shist.Add(dhist)
-        shist_rebinned = hist_rebinned.Clone(histname.replace("svj","sum")+"_rebinned")
-        shist_rebinned.Add(dhist_rebinned)
+        shist_rebinned = shist.Rebin(len(xbins)-1,histname.replace("svj","sum")+"_rebin",xbins)
 
         # write out before resetting bins
         if syst=="":
@@ -162,6 +161,7 @@ def doLimit(info):
     BR_dark = 0.47
     sig["xsecSVJ"] = sig["xsec"]
     sig["xsecDijet"] = sig["xsec"]/BR_dark*(1-BR_dark)*BR_qq
+    if args.xsec is not None: sig["xsecDijet"] = args.xsec
     # update w/ total xsec
     sig["xsec"] = 0
     if "DM" in args.finalState: sig["xsec"] += sig["xsecSVJ"]
@@ -177,7 +177,7 @@ def doLimit(info):
         extargs = extargs+p+" extArg "+str(v)+"\n"
     frzargs = trkargs[:]
 
-    dijet_acc = 0.41
+    dijet_acc = args.acc
     if args.method=="fit":
         fitparams = ["p1_PFDijet2017","p2_PFDijet2017","p3_PFDijet2017","shapeBkg_PFDijet2017_bkg_PFDijet2017__norm"]
         trkargs.extend(fitparams)
@@ -189,7 +189,7 @@ def doLimit(info):
     elif args.method=="ratio":
         dcfnameSR = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MC.root","wPFDijet2017MC","wPFDijet2018MC","dijet_combine_SR_{}.txt",sig,signame,extargs,"cmsdijet",dijet_acc,args.method,args.finalState,args.dry_run)
         dcfnameCR = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MCCR.root","wPFDijet2017MCCR","wPFDijet2018MCCR","dijet_combine_CRhigh_{}.txt",sig,signame,extargs,"cmsdijetCRhigh",dijet_acc*0.45,args.method,args.finalState,args.dry_run)
-        dcfnameCRmid = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MCCRmid.root","wPFDijet2017MCCRmid","wPFDijet2018MCCRmid","dijet_combine_CRmid_{}.txt",sig,signame,extargs,"cmsdijetCRmiddle",dijet_acc*0.47,args.method,args.finalState,args.dry_run)
+        dcfnameCRmid = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MCCRmid.root","wPFDijet2017MCCRmid","wPFDijet2018MCCRmid","dijet_combine_CRmid_{}.txt",sig,signame,extargs,"cmsdijetCRmiddle",dijet_acc*0.27,args.method,args.finalState,args.dry_run)
 
         # use combined card
         dcfname = "dijet_combine_ratio_{}.txt".format(signame)
@@ -307,6 +307,8 @@ if __name__=="__main__":
     parser.add_argument("-u", "--update-xsec", dest="updateXsec", type=str, metavar=('filename','suffix'), default=[], nargs=2, help="info to update cross sections when hadding")
     parser.add_argument("-m", "--method", dest="method", type=str, required=True, choices=["fit","ratio"], help="dijet background prediction method")
     parser.add_argument("-s", "--final-state", dest="finalState", type=str, nargs='+', choices=["DM","SM"], help="signal final state(s)")
+    parser.add_argument("-A", "--acc", dest="acc", type=float, default=0.41, help="dijet SR acceptance")
+    parser.add_argument("-X", "--xsec", dest="xsec", type=float, default=None, help="manual (dijet) cross section")
     args = parser.parse_args()
 
     # parse signal info
