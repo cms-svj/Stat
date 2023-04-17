@@ -13,6 +13,9 @@ def DtoF(hD):
     hD.Copy(hF)
     return hF
 
+def getMethods():
+    return ["fit","ratio"]
+
 def getXsecs(fname):
     with open(fname,'r') as xfile:
         xsecs = {xline.split('\t')[0]: float(xline.split('\t')[1]) for xline in xfile}
@@ -27,11 +30,11 @@ def fill_template(inname, outname, **kwargs):
     with open(outname,'w') as temp:
         temp.write(new_lines)
 
-def transform(iname,wname,w2name,template,sig,signame,extargs,region,acc,method,finalState,dryrun):
+def transform(iname,wname,w2name,template,sig,fullname,extargs,region,acc,args):
     lumi = 36330+41530+59740
     acc_svj_fname = "dijetEff_svj.root"
-    dmWeight = 1 if "DM" in finalState else 0
-    smWeight = 1 if "SM" in finalState else 0
+    dmWeight = 1 if "DM" in args.finalState else 0
+    smWeight = 1 if "SM" in args.finalState else 0
 
     import ROOT as r
     r.gSystem.Load("libHiggsAnalysisCombinedLimit.so")
@@ -46,12 +49,13 @@ def transform(iname,wname,w2name,template,sig,signame,extargs,region,acc,method,
     acc_graph = r.TGraph(n, acc_svj_tree.GetV1(), acc_svj_tree.GetV2())
     acc_svj = acc_graph.Eval(float(sig["mZprime"]))
 
+    signame = getSignameShort(sig)
     tname = template.format("template")
-    ofname = template.format(signame).replace(".txt",".root")
+    ofname = template.format(fullname).replace(".txt",".root")
     hofname = "hist_"+ofname
-    dcfname = template.format(signame)
+    dcfname = template.format(fullname)
 
-    if dryrun: return dcfname
+    if args.dry_run: return dcfname
 
     systs = [
         "",
@@ -70,7 +74,7 @@ def transform(iname,wname,w2name,template,sig,signame,extargs,region,acc,method,
     w = ifile.Get(wname)
 
     xlist = [2438,2546,2659,2775,2895,3019,3147,3279,3416,3558,3704,3854,4010,4171,4337,4509,4686,4869,5058,5253,5455,5663,5877,6099,6328,6564,6808,7060,7320,7589,7866,8152,8752]
-    if method=="fit":
+    if args.method=="fit":
         xlist = [1530,1607,1687,1770,1856,1945,2037,2132,2231,2332]+xlist
     xbins = array('d',xlist)
     th1x = w.var("th1x")
@@ -151,11 +155,16 @@ def transform(iname,wname,w2name,template,sig,signame,extargs,region,acc,method,
 
     return dcfname
 
+def getFullname(sig,method,finalState):
+    if isinstance(sig,str): signame = sig
+    else: signame = getSignameShort(sig)
+    return signame+"_"+method+"_"+"_".join(sorted(finalState))
+
 def doLimit(info):
     outputs = []
     args = info["args"]
     sig = info["sig"]
-    signame = getSignameShort(sig)
+    fullname = getFullname(sig,args.method,args.finalState)
 
     BR_qq = 5./6.
     BR_dark = 0.47
@@ -168,6 +177,7 @@ def doLimit(info):
     if "SM" in args.finalState: sig["xsec"] += sig["xsecDijet"]
 
     params = {key:paramVal(key,val) for key,val in sig.iteritems()}
+    params["method"] = int(args.method=="ratio")
     setargs = []
     trkargs = []
     extargs = ""
@@ -184,15 +194,15 @@ def doLimit(info):
         if args.freezeNorm: frzargs.append("shapeBkg_PFDijet2017_bkg_PFDijet2017__norm")
 
         # datacard setup
-        dcfname = transform("dijet_combine_qq_1900_lumi-137.500_PFDijet2017.root","wPFDijet2017","wPFDijet2018","dijet_combine_fit_{}.txt",sig,signame,extargs,"cmsdijet",dijet_acc,args.method,args.finalState,args.dry_run)
+        dcfname = transform("dijet_combine_qq_1900_lumi-137.500_PFDijet2017.root","wPFDijet2017","wPFDijet2018","dijet_combine_fit_{}.txt",sig,fullname,extargs,"cmsdijet",dijet_acc,args)
 
     elif args.method=="ratio":
-        dcfnameSR = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MC.root","wPFDijet2017MC","wPFDijet2018MC","dijet_combine_SR_{}.txt",sig,signame,extargs,"cmsdijet",dijet_acc,args.method,args.finalState,args.dry_run)
-        dcfnameCR = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MCCR.root","wPFDijet2017MCCR","wPFDijet2018MCCR","dijet_combine_CRhigh_{}.txt",sig,signame,extargs,"cmsdijetCRhigh",dijet_acc*0.45,args.method,args.finalState,args.dry_run)
-        dcfnameCRmid = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MCCRmid.root","wPFDijet2017MCCRmid","wPFDijet2018MCCRmid","dijet_combine_CRmid_{}.txt",sig,signame,extargs,"cmsdijetCRmiddle",dijet_acc*0.27,args.method,args.finalState,args.dry_run)
+        dcfnameSR = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MC.root","wPFDijet2017MC","wPFDijet2018MC","dijet_combine_SR_{}.txt",sig,fullname,extargs,"cmsdijet",dijet_acc,args)
+        dcfnameCR = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MCCR.root","wPFDijet2017MCCR","wPFDijet2018MCCR","dijet_combine_CRhigh_{}.txt",sig,fullname,extargs,"cmsdijetCRhigh",dijet_acc*0.45,args)
+        dcfnameCRmid = transform("dijet_combine_qq_5000_lumi-136.600_PFDijet2017MCCRmid.root","wPFDijet2017MCCRmid","wPFDijet2018MCCRmid","dijet_combine_CRmid_{}.txt",sig,fullname,extargs,"cmsdijetCRmiddle",dijet_acc*0.27,args)
 
         # use combined card
-        dcfname = "dijet_combine_ratio_{}.txt".format(signame)
+        dcfname = dcfnameSR.replace("SR","ratio")
         command = "combineCards.py "+" ".join([dcfnameSR,dcfnameCR,dcfnameCRmid])+" > "+dcfname
         outputs.append(command)
         if not args.dry_run: os.system(command)
@@ -203,11 +213,11 @@ def doLimit(info):
     cargs = args.args
     if len(cargs)>0: cargs += " "
     cargs += "--setParameters {} --freezeParameters {} --trackParameters {} --keyword-value sig={} -n {} -d {}".format(
-        ','.join(setargs), ','.join(frzargs), ','.join(trkargs), signame, args.cname, dcfname
+        ','.join(setargs), ','.join(frzargs), ','.join(trkargs), fullname, args.cname, dcfname
     )
 
     # run combine
-    fprint("Calculating limit for {}...".format(signame))
+    fprint("Calculating limit for {}...".format(fullname))
     command = "combine -M AsymptoticLimits {}".format(cargs)
     outputs.append(command)
     if not args.dry_run: outputs.append(runCmd(command))
@@ -217,8 +227,6 @@ def doLimit(info):
 def main(args):
     cname = args.name[:]
     if args.freezeNorm: cname += "Frz"
-    if "SM" not in args.finalState: cname += "DM"
-    elif "DM" not in args.finalState: cname += "SM"
     args.cname = cname
 
     # assumes getDijetShapes has already been called
@@ -244,8 +252,28 @@ def main(args):
     outtrees = []
     outtreesroot = r.TList()
     for sig in args.signals:
-        signame = getSignameShort(sig)
-        fname = "higgsCombine{}.AsymptoticLimits.mH120.sig{}.root".format(cname,signame)
+        if args.method=="best":
+            # decide which method to use based on criterion
+            fullname = getFullname(sig,"ratio",args.finalState)
+            histfname = "hist_dijet_combine_SR_{}.root".format(fullname)
+            if len(args.hadd_dir)>0: histfname = args.hadd_dir+"/"+histfname
+            histf = r.TFile.Open(histfname)
+            signame = getSignameShort(sig)
+            shistname = "h_sum_{}".format(signame.replace("SVJ_","").replace(".",""))
+            shist = histf.Get(shistname)
+            # criterion: >1 sigma, one-sided
+            min_eff = 0.84135
+            min_mjj = 2438
+            eff = shist.Integral(shist.FindBin(min_mjj),-1)/shist.Integral(-1,-1)
+            if eff > min_eff:
+                method = "ratio"
+            else:
+                method = "fit"
+            print("{}: chose method {} (eff = {:.4f})".format(signame, method, eff))
+        else:
+            method = args.method
+        fullname = getFullname(sig,method,args.finalState)
+        fname = "higgsCombine{}.AsymptoticLimits.mH120.sig{}.root".format(cname,fullname)
         if len(args.hadd_dir)>0: fname = args.hadd_dir+"/"+fname
         if args.dry_run:
             outtrees.append(fname)
@@ -278,13 +306,17 @@ def main(args):
                             outtrees.append(t)
                             outtreesroot.Add(t)
                     else:
-                        fprint("Warning: limit for {} did not converge".format(signame))
+                        fprint("Warning: limit for {} did not converge".format(fullname))
 
     # combine outfiles
     if not args.no_hadd:
         if args.dry_run: fprint(outtrees)
         else:
-            outname = "limit_dijet{}{}.root".format("_"+cname[4:] if len(cname[4:])>0 else "",args.updateXsec[1] if len(args.updateXsec)>0 else "")
+            outname = "limit_dijet{}{}{}.root".format(
+                "_"+cname[4:] if len(cname[4:])>0 else "",
+                args.updateXsec[1] if len(args.updateXsec)>0 else "",
+                getFullname("",args.method,args.finalState),
+            )
             outfile = r.TFile.Open(outname,"RECREATE")
             outtree = r.TTree.MergeTrees(outtreesroot)
             outtree.Write()
@@ -295,8 +327,9 @@ if __name__=="__main__":
     parser.add_argument("-n", "--npool", dest="npool", type=int, default=6, help="number of processes")
     parser.add_argument("-D", "--dry-run", dest="dry_run", default=False, action='store_true', help="dry run (print commands but don't execute)")
     parser.add_argument("-f", "--freezeNorm", dest="freezeNorm", default=False, action="store_true", help="freeze bkg normalization to data")
-    parser.add_argument("-j", "--just-hadd", dest="just_hadd", default=False, action="store_true", help="don't run any combine commands, just hadd")
-    parser.add_argument("--no-hadd", dest="no_hadd", default=False, action="store_true", help="don't hadd")
+    hadd_group = parser.add_mutually_exclusive_group()
+    hadd_group.add_argument("-j", "--just-hadd", dest="just_hadd", default=False, action="store_true", help="don't run any combine commands, just hadd")
+    hadd_group.add_argument("--no-hadd", dest="no_hadd", default=False, action="store_true", help="don't hadd")
     parser.add_argument("--hadd-dir", dest="hadd_dir", type=str, default="", help="directory for files to be hadded if not local")
     sig_group = parser.add_mutually_exclusive_group()
     sig_group.add_argument("--signal", dest="signals", metavar=tuple(getParamNames()), type=str, default=[], nargs=4, help="signal parameters")
@@ -305,11 +338,14 @@ if __name__=="__main__":
     parser.add_argument("-N", "--name", dest="name", type=str, default="Test", help="name for combine files")
     parser.add_argument("-a", "--args", dest="args", type=str, default="", help="extra args for combine")
     parser.add_argument("-u", "--update-xsec", dest="updateXsec", type=str, metavar=('filename','suffix'), default=[], nargs=2, help="info to update cross sections when hadding")
-    parser.add_argument("-m", "--method", dest="method", type=str, required=True, choices=["fit","ratio"], help="dijet background prediction method")
+    parser.add_argument("-m", "--method", dest="method", type=str, required=True, choices=["fit","ratio","best"], help="dijet background prediction method")
     parser.add_argument("-s", "--final-state", dest="finalState", type=str, nargs='+', choices=["DM","SM"], help="signal final state(s)")
     parser.add_argument("-A", "--acc", dest="acc", type=float, default=0.41, help="dijet SR acceptance")
     parser.add_argument("-X", "--xsec", dest="xsec", type=float, default=None, help="manual (dijet) cross section")
     args = parser.parse_args()
+
+    if not args.just_hadd and args.method=="best":
+        parser.error('Can only use "best" method with --just-hadd')
 
     # parse signal info
     xsecs = getXsecs('dict_xsec_Zprime.txt')
