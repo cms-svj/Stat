@@ -177,7 +177,7 @@ def doLimit(info):
     if "SM" in args.finalState: sig["xsec"] += sig["xsecDijet"]
 
     params = {key:paramVal(key,val) for key,val in sig.iteritems()}
-    params["method"] = int(args.method=="ratio")
+    params["method"] = int(args.method=="ratio")+1
     setargs = []
     trkargs = []
     extargs = ""
