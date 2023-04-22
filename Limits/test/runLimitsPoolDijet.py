@@ -252,15 +252,19 @@ def main(args):
     outtrees = []
     outtreesroot = r.TList()
     for sig in args.signals:
-        if args.method=="best":
+        if args.method.startswith("best"):
             # decide which method to use based on criterion
             fullname = getFullname(sig,"ratio",args.finalState)
             histfname = "hist_dijet_combine_SR_{}.root".format(fullname)
             if len(args.hadd_dir)>0: histfname = args.hadd_dir+"/"+histfname
             histf = r.TFile.Open(histfname)
             signame = getSignameShort(sig)
-            shistname = "h_sum_{}".format(signame.replace("SVJ_","").replace(".",""))
-            shist = histf.Get(shistname)
+            if args.method=="best":
+                shistname = "h_sum_{}".format(signame.replace("SVJ_","").replace(".",""))
+                shist = histf.Get(shistname)
+            elif args.method=="best2":
+                shistname = "h_qq_{}".format(sig["mZprime"])
+                shist = histf.Get(shistname)
             # criterion: >1 sigma, one-sided
             min_eff = 0.84135
             min_mjj = 2438
@@ -338,13 +342,13 @@ if __name__=="__main__":
     parser.add_argument("-N", "--name", dest="name", type=str, default="Test", help="name for combine files")
     parser.add_argument("-a", "--args", dest="args", type=str, default="", help="extra args for combine")
     parser.add_argument("-u", "--update-xsec", dest="updateXsec", type=str, metavar=('filename','suffix'), default=[], nargs=2, help="info to update cross sections when hadding")
-    parser.add_argument("-m", "--method", dest="method", type=str, required=True, choices=["fit","ratio","best"], help="dijet background prediction method")
+    parser.add_argument("-m", "--method", dest="method", type=str, required=True, choices=["fit","ratio","best","best2"], help="dijet background prediction method")
     parser.add_argument("-s", "--final-state", dest="finalState", type=str, nargs='+', choices=["DM","SM"], help="signal final state(s)")
     parser.add_argument("-A", "--acc", dest="acc", type=float, default=0.41, help="dijet SR acceptance")
     parser.add_argument("-X", "--xsec", dest="xsec", type=float, default=None, help="manual (dijet) cross section")
     args = parser.parse_args()
 
-    if not args.just_hadd and args.method=="best":
+    if not args.just_hadd and args.method.startswith("best"):
         parser.error('Can only use "best" method with --just-hadd')
 
     # parse signal info
