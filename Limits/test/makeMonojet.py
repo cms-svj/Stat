@@ -4,8 +4,9 @@ from paramUtils import getParamNames, paramVal
 from runLimitsPool import getXsecs
 
 parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-parser.add_argument("-i", "--input", dest="input", type=str, default="monojet.txt", help="input file w/ columns: mass rinv obs exp")
+parser.add_argument("-i", "--input", dest="input", type=str, default="monojet.txt", help="input file w/ columns: mass rinv [limits]")
 parser.add_argument("-x", "--suffix", dest="suffix", type=str, default="", help="suffix for output filename")
+parser.add_argument("-q", "--quantiles", dest="quantiles", type=float, default=[-1,0.5], nargs='+', help="quantiles for limit columns")
 args = parser.parse_args()
 
 import ROOT as r
@@ -36,7 +37,10 @@ with open(args.input,'r') as input_file:
             skipped_header = True
             continue
         # parse columns
-        mZprime, rinv, obs, exp = line.rstrip().split()
+        linesplit = line.rstrip().split()
+        mZprime = linesplit[0]
+        rinv = linesplit[1]
+        limits = linesplit[2:]
         # no yield
         if rinv=="0": continue
         xsec = xsecs[mZprime]
@@ -46,7 +50,7 @@ with open(args.input,'r') as input_file:
         qobj.trackedParam_rinv = float(rinv)
         qobj.trackedParam_xsec = float(xsec)
 
-        for lim,qtl in zip([exp,obs],[0.5,-1]):
+        for lim,qtl in zip(list(limits),args.quantiles):
             qobj.limit = float(lim)
             qobj.quantileExpected = qtl
             tree.Fill()
