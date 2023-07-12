@@ -210,17 +210,64 @@ def doLimit(info):
         with open(dcfname,'a') as dcfile:
             dcfile.write(extargs)
 
-    cargs = args.args
-    if len(cargs)>0: cargs += " "
-    cargs += "--setParameters {} --freezeParameters {} --trackParameters {} --keyword-value sig={} -n {} -d {}".format(
-        ','.join(setargs), ','.join(frzargs), ','.join(trkargs), fullname, args.cname, dcfname
-    )
+    cargs = [
+        "--setParameters {}".format(','.join(setargs)),
+        "--freezeParameters {}".format(','.join(frzargs)),
+        "--trackParameters {}".format(','.join(trkargs)),
+        "--keyword-value sig={}".format(fullname),
+        "-n {}".format(args.cname),
+        "-d {}".format(dcfname),
+    ]
+    if len(args.args)>0: cargs.append(args.args)
 
     # run combine
-    fprint("Calculating limit for {}...".format(fullname))
-    command = "combine -M AsymptoticLimits {}".format(cargs)
-    outputs.append(command)
-    if not args.dry_run: outputs.append(runCmd(command))
+    if args.bias:
+        bname = "DijetSig{}".format(args.injectSignal)
+        bargs = [
+            "--expectSignal {}".format(args.injectSignal),
+            "-t {}".format(args.ntoys),
+            "--toysFrequentist",
+            "--saveToys",
+            "--bypassFrequentistFit",
+        ]
+
+        gname = args.cname.replace(args.name,bname+"Gen")
+        gargs = [v for i,v in enumerate(cargs) if i not in [2,4]]
+        gargs.extend(bargs)
+        gargs.extend([
+            "-n {}".format(gname),
+            "-s {}".format(args.seed),
+            "--saveWorkspace",
+        ])
+
+        fname = args.cname.replace(args.name,bname+"Fit")
+        fargs = [v for i,v in enumerate(cargs) if i not in [4]]
+        fargs.extend(bargs)
+        fargs.extend([
+            "-n {}".format(fname),
+            "--toysFile higgsCombine{}.GenerateOnly.mH120.sig{}.{}.root".format(gname,fullname,args.seed),
+            "--rMin {}".format(-args.rmax),
+            "--rMax {}".format(args.rmax),
+            "--savePredictionsPerToy",
+        ])
+
+        gargs = ' '.join(gargs)
+        fprint("Generating toys for {}...".format(fullname))
+        gcommand = "combine -M GenerateOnly {}".format(gargs)
+        outputs.append(gcommand)
+        if not args.dry_run: outputs.append(runCmd(gcommand))
+
+        fargs = ' '.join(fargs)
+        fprint("Running fits for {}...".format(fullname))
+        fcommand = "combine -M FitDiagnostics {}".format(fargs)
+        outputs.append(fcommand)
+        if not args.dry_run: outputs.append(runCmd(fcommand))
+    else:
+        cargs = ' '.join(cargs)
+        fprint("Calculating limit for {}...".format(fullname))
+        command = "combine -M AsymptoticLimits {}".format(cargs)
+        outputs.append(command)
+        if not args.dry_run: outputs.append(runCmd(command))
 
     return outputs
 
@@ -251,7 +298,36 @@ def main(args):
             r.gROOT.ProcessLine("struct xsec_t { Float_t mZprime; Float_t xsec; Double_t limit; };")
     outtrees = []
     outtreesroot = r.TList()
+    if args.bias: fprint("\nBIAS FIT RESULTS")
     for sig in args.signals:
+        if args.bias:
+            bname = "DijetSig{}".format(args.injectSignal)
+            fname = args.cname.replace(args.name,bname+"Fit")
+            fullname = getFullname(sig,args.method,args.finalState)
+            fitfname = "fitDiagnostics{}.mH120.sig{}.{}.root".format(fname,fullname,args.seed)
+            fitf = r.TFile.Open(fitfname)
+            if fitf!=None:
+                fittree = fitf.Get("tree_fit_sb")
+                if fittree!=None:
+                    minPull = -5
+                    maxPull = 5
+                    nBins = int(args.ntoys/5.0)
+                    selection = "fit_status==0"
+                    hname = "pull_{}".format(fullname)
+                    fittree.Draw("(r-{})/rErr>>{}({},{},{})".format(args.injectSignal,hname,nBins,minPull,maxPull),selection,"goff")
+                    gaus = r.TF1("gaus","gaus(0)",minPull,maxPull)
+                    hpull = r.gDirectory.Get(hname)
+                    hpull.Fit(gaus,"RQN")
+                    fprint("{} {} {} {} {}".format(
+                        ' '.join(["{}".format(sig[key]) for key in getParamNames()]),
+                        gaus.GetParameter(1),
+                        gaus.GetParError(1),
+                        gaus.GetParameter(2),
+                        gaus.GetParError(2),
+                    ))
+                    continue
+            fprint("ERROR: bias fit for {} did not converge".format(fullname))
+            continue
         if args.method.startswith("best"):
             # decide which method to use based on criterion
             fullname = getFullname(sig,"ratio",args.finalState)
@@ -346,7 +422,16 @@ if __name__=="__main__":
     parser.add_argument("-s", "--final-state", dest="finalState", type=str, nargs='+', choices=["DM","SM"], help="signal final state(s)")
     parser.add_argument("-A", "--acc", dest="acc", type=float, default=0.41, help="dijet SR acceptance")
     parser.add_argument("-X", "--xsec", dest="xsec", type=float, default=None, help="manual (dijet) cross section")
+    parser.add_argument("-b", "--bias", dest="bias", default=False, action="store_true", help="perform bias study")
+    parser.add_argument("--inject-signal", dest="injectSignal", type=int, default=0, help="signal strength to inject for bias study")
+    parser.add_argument("--ntoys", dest="ntoys", type=int, default=100, help="number of toys for bias study")
+    parser.add_argument("--rmax", dest="rmax", type=float, default=80, help="max signal strength allowed for bias study")
+    parser.add_argument("--seed", dest="seed", type=int, default=123456, help="seed for toy generation in bias study")
     args = parser.parse_args()
+
+    if args.bias:
+        args.just_hadd = False
+        args.no_hadd = True
 
     if not args.just_hadd and args.method.startswith("best"):
         parser.error('Can only use "best" method with --just-hadd')
