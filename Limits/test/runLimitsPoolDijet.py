@@ -341,14 +341,22 @@ def main(args):
             elif args.method=="best2":
                 shistname = "h_qq_{}".format(sig["mZprime"])
                 shist = histf.Get(shistname)
-            # criterion: >1 sigma, one-sided
-            min_eff = 0.84135
-            min_mjj = 2438
-            eff = shist.Integral(shist.FindBin(min_mjj),-1)/shist.Integral(-1,-1)
-            if eff > min_eff:
-                method = "ratio"
+            # best3 uses a different criterion
+            if args.method=="best3":
+                eff = 1
+                if int(sig["mZprime"])<3000:
+                    method = "fit"
+                else:
+                    method = "ratio"
             else:
-                method = "fit"
+                # criterion: >1 sigma, one-sided
+                min_eff = 0.84135
+                min_mjj = 2438
+                eff = shist.Integral(shist.FindBin(min_mjj),-1)/shist.Integral(-1,-1)
+                if eff > min_eff:
+                    method = "ratio"
+                else:
+                    method = "fit"
             print("{}: chose method {} (eff = {:.4f})".format(signame, method, eff))
         else:
             method = args.method
@@ -418,7 +426,7 @@ if __name__=="__main__":
     parser.add_argument("-N", "--name", dest="name", type=str, default="Test", help="name for combine files")
     parser.add_argument("-a", "--args", dest="args", type=str, default="", help="extra args for combine")
     parser.add_argument("-u", "--update-xsec", dest="updateXsec", type=str, metavar=('filename','suffix'), default=[], nargs=2, help="info to update cross sections when hadding")
-    parser.add_argument("-m", "--method", dest="method", type=str, required=True, choices=["fit","ratio","best","best2"], help="dijet background prediction method")
+    parser.add_argument("-m", "--method", dest="method", type=str, required=True, choices=["fit","ratio","best","best2","best3"], help="dijet background prediction method")
     parser.add_argument("-s", "--final-state", dest="finalState", type=str, nargs='+', choices=["DM","SM"], help="signal final state(s)")
     parser.add_argument("-A", "--acc", dest="acc", type=float, default=0.41, help="dijet SR acceptance")
     parser.add_argument("-X", "--xsec", dest="xsec", type=float, default=None, help="manual (dijet) cross section")
