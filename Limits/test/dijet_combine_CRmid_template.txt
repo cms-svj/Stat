@@ -1,0 +1,19 @@
+imax 1 number of channels
+jmax 1 number of processes minus 1
+kmax * number of nuisance parameters
+------------------------------------------------------------
+observation	253204.000
+------------------------------------------------------------
+shapes * * $wsfile $wsname:$$PROCESS $wsname:$$PROCESS_$$SYSTEMATIC
+------------------------------------------------------------
+bin	PFDijet2017MCCRmid	PFDijet2017MCCRmid
+process	$signame	PFDijet2017MCCRmid_bkg
+process	0	1
+rate	$sigrate	1.000
+------------------------------------------------------------
+lumi	lnN	1.062	1.000
+jes	shape		1.0	-
+jer	shape		1.0	-
+slope	flatParam
+beta	flatParam
+epsilon	flatParam
